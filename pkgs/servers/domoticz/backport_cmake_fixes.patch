@@ -1,0 +1,148 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,12 +1,28 @@
+-#set to minimum version that supports clean build on cygwin
+-cmake_minimum_required(VERSION 2.8.4)
++#set to minimum version that supports clean build
++cmake_minimum_required(VERSION 3.14.0)
+ 
+ project(domoticz)
+ 
+ ## required min. libBoost version
+-SET(DOMO_MIN_LIBBOOST_VERSION 106000)
++SET(DOMO_MIN_LIBBOOST_VERSION 1.66.0)
+ ##
+ 
++MACRO(History_GET_REVISION variable)
++  IF(EXISTS ${CMAKE_SOURCE_DIR}/History.txt)
++    MESSAGE(STATUS "Read ProjectRevision from History.txt")
++    CMAKE_POLICY(SET CMP0007 NEW)
++    FILE(STRINGS ${CMAKE_SOURCE_DIR}/History.txt AppVersionContent)
++    LIST(GET AppVersionContent 0 AppVersionContent)
++    STRING(REPLACE " " ";" AppVersionContent ${AppVersionContent})
++    LIST(GET AppVersionContent 1 AppVersionContent)
++    STRING(REPLACE "." ";" AppVersionContent ${AppVersionContent})
++    LIST(GET AppVersionContent 1 ${variable})
++  ELSE(EXISTS ${CMAKE_SOURCE_DIR}/History.txt)
++    MESSAGE(STATUS "Failed to get ProjectRevision from History.txt, set it to 0")
++    set (${variable} 0)
++  ENDIF(EXISTS ${CMAKE_SOURCE_DIR}/History.txt)
++ENDMACRO(History_GET_REVISION)
++
+ MACRO(Gitversion_GET_REVISION dir variable)
+   EXECUTE_PROCESS(COMMAND ${GIT_EXECUTABLE} --git-dir ./.git rev-list HEAD --count
+     WORKING_DIRECTORY ${dir}
+@@ -17,16 +33,7 @@ ENDMACRO(Gitversion_GET_REVISION)
+ Gitversion_GET_REVISION("${CMAKE_SOURCE_DIR}" ProjectRevision)
+ IF(NOT ProjectRevision)
+   MESSAGE(STATUS "Failed to get ProjectRevision from git")
+-  IF(EXISTS ${CMAKE_SOURCE_DIR}/appversion.default)
+-    MESSAGE(STATUS "Read ProjectRevision from appversion.default")
+-    FILE(STRINGS ${CMAKE_SOURCE_DIR}/appversion.default AppVersionContent)
+-    LIST(GET AppVersionContent 0 AppVersionContent)
+-    STRING(REPLACE " " ";" AppVersionContent ${AppVersionContent})
+-    LIST(GET AppVersionContent 2 ProjectRevision)
+-  ELSE(EXISTS ${CMAKE_SOURCE_DIR}/appversion.default)
+-    MESSAGE(STATUS "No appversion.default, set ProjectRevision to 0")
+-    set (ProjectRevision 0)
+-  ENDIF(EXISTS ${CMAKE_SOURCE_DIR}/appversion.default)
++  History_GET_REVISION(ProjectRevision)
+ ELSE(NOT ProjectRevision)
+   MATH(EXPR ProjectRevision "${ProjectRevision}+2107")
+ ENDIF(NOT ProjectRevision)
+@@ -243,7 +250,7 @@ MACRO(ADD_PRECOMPILED_HEADER _targetName _input)
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+   ENDIF()
+   IF(CMAKE_COMPILER_IS_GNUCXX)
+-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
++    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wno-psabi")
+     #SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-switch")
+     #ADD_DEFINITIONS( -Wall -O0 -ggdb )
+     #ADD_DEFINITIONS( -Wfatal-errors -Wformat=2 -Werror=format-security )
+@@ -576,7 +584,6 @@ set(Boost_USE_STATIC_LIBS ${USE_STATIC_BOOST})
+ set(Boost_USE_MULTITHREADED ON)
+ unset(Boost_INCLUDE_DIR CACHE)
+ unset(Boost_LIBRARY_DIRS CACHE)
+-find_package(Boost REQUIRED COMPONENTS thread system)
+ 
+ if(USE_STATIC_BOOST)
+    message(STATUS "Linking against boost static libraries")
+@@ -584,6 +591,9 @@ else(USE_STATIC_BOOST)
+    message(STATUS "Linking against boost dynamic libraries")
+ endif(USE_STATIC_BOOST)
+ 
++find_package(Boost REQUIRED COMPONENTS thread system)
++target_link_libraries(domoticz Boost::thread Boost::system)
++
+ # compare found vs required libBoost version
+ if(Boost_VERSION VERSION_LESS DOMO_MIN_LIBBOOST_VERSION)
+    message(FATAL_ERROR "Found libBoost version ${Boost_VERSION}, ${DOMO_MIN_LIBBOOST_VERSION} or newer required")
+@@ -751,12 +726,16 @@ else()
+   message(STATUS "Not found telldus-core (telldus-core.h), not adding tellstick support")
+ endif (TELLDUSCORE_INCLUDE)
+ 
++target_link_libraries(domoticz ${Boost_LIBRARIES} ${ZLIB_LIBRARIES} ${MINIZIP_LIBRARIES} ${CURL_LIBRARIES} pthread ${LUA_LIBRARIES} ${MQTT_LIBRARIES} ${SQLite_LIBRARIES} ${CMAKE_DL_LIBS} ${TELLDUS_LIBRARIES})
++
+ IF(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+-  target_link_libraries(domoticz ${Boost_LIBRARIES} ${ZLIB_LIBRARIES} ${MINIZIP_LIBRARIES} ${CURL_LIBRARIES} pthread ${LUA_LIBRARIES} ${MQTT_LIBRARIES} ${SQLite_LIBRARIES} ${CMAKE_DL_LIBS} ${TELLDUS_LIBRARIES})
++  target_link_libraries(domoticz -lresolv)
+ elseif(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+-  target_link_libraries(domoticz ${Boost_LIBRARIES} ${ZLIB_LIBRARIES} ${MINIZIP_LIBRARIES} ${CURL_LIBRARIES} pthread ${LUA_LIBRARIES} ${MQTT_LIBRARIES} ${SQLite_LIBRARIES} ${CMAKE_DL_LIBS} ${TELLDUS_LIBRARIES} ${EXECINFO_LIBRARIES})
++  target_link_libraries(domoticz ${EXECINFO_LIBRARIES})
++elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
++  target_link_libraries(domoticz ${EXECINFO_LIBRARIES})
+ else()
+-  target_link_libraries(domoticz -lrt ${Boost_LIBRARIES} ${ZLIB_LIBRARIES} ${MINIZIP_LIBRARIES} ${CURL_LIBRARIES} pthread ${LUA_LIBRARIES} ${MQTT_LIBRARIES} ${SQLite_LIBRARIES} ${CMAKE_DL_LIBS} ${TELLDUS_LIBRARIES} ${EXECINFO_LIBRARIES})
++  target_link_libraries(domoticz -lrt -lresolv ${EXECINFO_LIBRARIES})
+ ENDIF()
+ 
+ ADD_PRECOMPILED_HEADER(domoticz "main/stdafx.h")
+--- a/getgit.cmake
++++ b/getgit.cmake
+@@ -7,6 +7,22 @@ if(NOT GIT_FOUND)
+   MESSAGE(FATAL_ERROR "Git not found!.")
+ endif()
+ 
++MACRO(History_GET_REVISION variable)
++  IF(EXISTS ${CMAKE_SOURCE_DIR}/History.txt)
++    MESSAGE(STATUS "Read ProjectRevision from History.txt")
++    CMAKE_POLICY(SET CMP0007 NEW)
++    FILE(STRINGS ${CMAKE_SOURCE_DIR}/History.txt AppVersionContent)
++    LIST(GET AppVersionContent 0 AppVersionContent)
++    STRING(REPLACE " " ";" AppVersionContent ${AppVersionContent})
++    LIST(GET AppVersionContent 1 AppVersionContent)
++    STRING(REPLACE "." ";" AppVersionContent ${AppVersionContent})
++    LIST(GET AppVersionContent 1 ${variable})
++  ELSE(EXISTS ${CMAKE_SOURCE_DIR}/History.txt)
++    MESSAGE(STATUS "Failed to get ProjectRevision from History.txt, set it to 0")
++    set (${variable} 0)
++  ENDIF(EXISTS ${CMAKE_SOURCE_DIR}/History.txt)
++ENDMACRO(History_GET_REVISION)
++
+ MACRO(Gitversion_GET_REVISION dir variable)
+   EXECUTE_PROCESS(COMMAND ${GIT_EXECUTABLE} --git-dir ./.git rev-list HEAD --count
+     WORKING_DIRECTORY ${dir}
+@@ -37,8 +53,7 @@ ENDMACRO(Gitversion_CHECK_DIRTY)
+ 
+ Gitversion_GET_REVISION("${SOURCE_DIR}" ProjectRevision)
+ IF(NOT ProjectRevision)
+-  MESSAGE(STATUS "Failed to get ProjectRevision from git, set it to 0")
+-  set (ProjectRevision 0)
++  History_GET_REVISION(ProjectRevision)
+ ELSE(NOT ProjectRevision)
+   MATH(EXPR ProjectRevision "${ProjectRevision}+2107")
+ ENDIF(NOT ProjectRevision)
+@@ -61,13 +76,6 @@ ENDIF(ProjectDirty)
+ # write a file with the APPVERSION define
+ file(WRITE ${SOURCE_DIR}/appversion.h.txt "#define APPVERSION ${ProjectRevision}\n#define APPHASH \"${ProjectHash}\"\n#define APPDATE ${ProjectDate}\n")
+ 
+-# if ProjectDate is 0, create appversion.h.txt from a copy of appversion.default
+-IF(NOT ProjectDate AND EXISTS ${SOURCE_DIR}/appversion.default)
+-  MESSAGE(STATUS "ProjectDate is 0 and appversion.default exists, copy it")
+-  execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different
+-                        ${SOURCE_DIR}/appversion.default ${SOURCE_DIR}/appversion.h.txt)
+-ENDIF(NOT ProjectDate AND EXISTS ${SOURCE_DIR}/appversion.default)
+-
+ # copy the file to the final header only if the version changes
+ # reduces needless rebuilds
+ 

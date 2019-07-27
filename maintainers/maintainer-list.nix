@@ -5771,6 +5771,11 @@
     github = "xvapx";
     name = "Marti Serra";
   };
+  xvello = {
+    email = "xavier.vello@gmail.com";
+    github = "xvello";
+    name = "Xavier Vello";
+  };
   xwvvvvwx = {
     email = "davidterry@posteo.de";
     github = "xwvvvvwx";
